@@ -77,6 +77,64 @@ async function buyNFT(tokenId, price) {
     }
 }
 
+async function unlistNFT(tokenId) {
+    try {
+        const ethers = require("ethers");
+        //After adding your Hardhat network to your metamask, this code will get providers and signers
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const signer = provider.getSigner();
+
+        //Pull the deployed contract instance
+        let contract = new ethers.Contract(MarketplaceJSON.address, MarketplaceJSON.abi, signer);
+        
+        updateMessage("Unlisting the NFT... Please Wait (Upto 5 mins)")
+
+        //run the unlistToken function
+        let transaction = await contract.unlistToken(tokenId);
+        await transaction.wait();
+
+        alert('You successfully unlisted the NFT!');
+        updateMessage("");
+    }
+    catch(e) {
+        alert("Upload Error"+e)
+    }
+}
+
+async function resellNFT(tokenId, price) {
+    try {
+        const ethers = require("ethers");
+        price = ethers.utils.parseUnits(price, 18)
+        //After adding your Hardhat network to your metamask, this code will get providers and signers
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const signer = provider.getSigner();
+
+        //Pull the deployed contract instance
+        let contract = new ethers.Contract(MarketplaceJSON.address, MarketplaceJSON.abi, signer);
+        let erc20contract = new ethers.Contract(ERC20JSON.address, ERC20JSON.abi, signer)
+        //const salePrice = ethers.utils.parseUnits(data.price, 18)
+        updateMessage("Relisting the NFT... Please Wait (Upto 5 mins)")
+
+        //Get listing price
+        let listingPrice = await contract.getListPrice()
+        listingPrice = listingPrice.toString()
+
+        //authorizing smart contract to spend tokens
+        let authorization = await erc20contract.approve(MarketplaceJSON.address, listingPrice)
+        await authorization.wait()
+
+        //run the resellToken function
+        let transaction = await contract.resellToken(tokenId, price);
+        await transaction.wait();
+
+        alert('You successfully relisted the NFT!');
+        updateMessage("");
+    }
+    catch(e) {
+        alert("Upload Error"+e)
+    }
+}
+
     const params = useParams();
     const tokenId = params.tokenId;
     if(!dataFetched)
@@ -106,11 +164,25 @@ async function buyNFT(tokenId, price) {
                         Seller: <span className="text-sm">{data.seller}</span>
                     </div>
                     <div>
-                    { !data.currentlyListed ? (<div className="text-emerald-700">This token is not for sale</div>) :
-                        currAddress != data.seller ? (
+                    {
+                        // Not the token owner
+                        currAddress != data.seller ?
+
+                        (!data.currentlyListed ? 
+                            // Token not listed
+                            (<div className="text-emerald-700">This token is not for sale</div>) :
+                            // Token listed for sale
                             <button className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => buyNFT(tokenId, data.price)}>Buy this NFT</button>
-                            ) : (<div className="text-emerald-700">You are the owner of this NFT</div>
-                    )}
+                        ) :
+
+                        // Token owner
+                        (!data.currentlyListed ?
+                            //Token not listed
+                            (<button className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => resellNFT(tokenId, data.price)}>Resell this NFT</button>) :
+                            // Token listed for sale
+                            <button className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => unlistNFT(tokenId, data.price)}>Unlist this NFT</button>
+                        )
+                    }
                     
                     <div className="text-green text-center mt-3">{message}</div>
                     </div>
