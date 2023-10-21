@@ -2,6 +2,7 @@ import Navbar from "./Navbar";
 import { useState } from "react";
 import { uploadFileToIPFS, uploadJSONToIPFS } from "../pinata";
 import Marketplace from '../Marketplace.json';
+import ERC20 from '../ERC20.json'
 import { useLocation } from "react-router";
 
 export default function SellNFT () {
@@ -87,16 +88,21 @@ export default function SellNFT () {
             disableButton();
             updateMessage("Uploading NFT(takes 5 mins).. please dont click anything!")
 
-            //Pull the deployed contract instance
+            //Pull the deployed contracts instance
             let contract = new ethers.Contract(Marketplace.address, Marketplace.abi, signer)
+            let erc20contract = new ethers.Contract(ERC20.address, ERC20.abi, signer)
 
             //massage the params to be sent to the create NFT request
             const price = ethers.utils.parseUnits(formParams.price, 18)
             let listingPrice = await contract.getListPrice()
             listingPrice = listingPrice.toString()
 
+            //authorizing smart contract to spend tokens
+            let authorization = await erc20contract.approve(Marketplace.address, listingPrice)
+            await authorization.wait()
+
             //actually create the NFT
-            let transaction = await contract.createToken(metadataURL, price, { value: listingPrice })
+            let transaction = await contract.createToken(metadataURL, price)
             await transaction.wait()
 
             alert("Successfully listed your NFT!");

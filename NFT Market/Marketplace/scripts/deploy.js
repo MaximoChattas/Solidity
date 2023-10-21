@@ -7,13 +7,20 @@ async function main() {
   const [deployer] = await ethers.getSigners();
 
   //ERC20 Token Address
-  const ERC20Address = "0x07154285D7927e01E6160D85eFdF079af0Eef894"
+  const { ERC20_ADDRESS } = process.env
   
   //Get the NFTMarketplace smart contract object and deploy it
   const Marketplace = await hre.ethers.getContractFactory("NFTMarketplace");
-  const marketplace = await Marketplace.deploy(ERC20Address);
+  const marketplace = await Marketplace.deploy(ERC20_ADDRESS);
 
   await marketplace.deployed();
+
+  console.log("Deploying contracts with the account:", deployer.address);
+  
+  const weiAmount = (await deployer.getBalance()).toString();
+    
+  console.log("Account balance:", (await ethers.utils.formatEther(weiAmount)));
+  console.log("Contract address:", marketplace.address);
   
   //Pull the address and ABI out while you deploy, since that will be key in interacting with the smart contract later
   const data = {

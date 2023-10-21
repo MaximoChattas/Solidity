@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/maxichattas/Documents/UCC/3º Año/Seminario Blockchain/Solidity/NFT Market/ERC20/contracts/MaximoChattasToken.sol": {
-      "lastModificationDate": 1697515663383,
-      "contentHash": "b2057f6f1602b7cd9b20e04dd74e1e12",
+      "lastModificationDate": 1697871426757,
+      "contentHash": "886eb1852a404df92f20f20468c60163",
       "sourceName": "contracts/MaximoChattasToken.sol",
       "solcConfig": {
         "version": "0.8.20",

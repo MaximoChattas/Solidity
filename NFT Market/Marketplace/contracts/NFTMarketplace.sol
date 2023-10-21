@@ -1,58 +1,52 @@
-// SPDX-License-Identifier: Unlicense
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 
-// Import your custom ERC20 token contract
-import "./MaximoChattasToken.sol";
-
-contract NFTMarketplace is ERC721URIStorage {
+contract NFTMarketplace is ERC721URIStorage, Ownable {
     using Counters for Counters.Counter;
 
     Counters.Counter private _tokenIds;
     Counters.Counter private _itemsSold;
-    address payable owner;
+
+    uint256 private balance;
+
     //The fee charged by the marketplace to be allowed to list an NFT
-    uint256 listPrice = 0.01 ether;
+    uint256 listPrice = 10 ether;
 
     // Custom ERC20 token address
-    address public customToken;
+    address public immutable customToken;
 
     struct ListedToken {
         uint256 tokenId;
-        address payable owner;
-        address payable seller;
-        uint256 priceInCustomToken;
+        address owner;
+        address seller;
+        uint256 price;
+        bool exists;
         bool currentlyListed;
-        address customTokenAddress;
-        // NFT contract address and ID
-        address nftContractAddress;
-        uint256 nftTokenId;
     }
 
     event TokenListedSuccess(
         uint256 indexed tokenId,
         address owner,
         address seller,
-        uint256 priceInCustomToken,
+        uint256 price,
         bool currentlyListed
     );
 
     mapping(uint256 => ListedToken) private idToListedToken;
 
     constructor(address _customToken) ERC721("NFTMarketplace", "NFTM") {
-        owner = payable(msg.sender);
         customToken = _customToken;
+        balance = 0;
     }
 
     // Function for users to list new NFTs for sale
-    function createToken(
-        string memory tokenURI,
-        uint256 priceInCustomToken
-    ) public payable returns (uint) {
+    function createToken(string memory tokenURI, uint256 price) public returns (uint) {
         // Increment the tokenId counter
         _tokenIds.increment();
         uint256 newTokenId = _tokenIds.current();
@@ -64,65 +58,118 @@ contract NFTMarketplace is ERC721URIStorage {
         _setTokenURI(newTokenId, tokenURI);
 
         // Helper function to update Global variables and emit an event
-        createListedToken(newTokenId, priceInCustomToken);
+        createListedToken(newTokenId, price);
 
         return newTokenId;
     }
 
     // Function for users to list new NFTs for sale
-    function createListedToken(
-        uint256 tokenId,
-        uint256 priceInCustomToken
-    ) private {
-        require(
-            msg.value == listPrice,
-            "Please send the correct listing price"
-        );
+    function createListedToken(uint256 tokenId, uint256 price) private {
 
-        // Just a sanity check
-        require(priceInCustomToken > 0, "Make sure the price isn't negative");
+        require(price > 0, "Make sure the price isn't negative");
 
         // Update the mapping of tokenId to Token details, useful for retrieval functions
         idToListedToken[tokenId] = ListedToken(
             tokenId,
-            payable(address(this)),
-            payable(msg.sender),
-            priceInCustomToken,
-            true,
-            customToken,
             address(this),
-            tokenId
+            msg.sender,
+            price,
+            true,
+            true
         );
 
+        // Transfer the NFT to the smart contract
         _transfer(msg.sender, address(this), tokenId);
+
+        // The seller has to pay the listing price
+        // Check if the seller has enough balance
+        require(IERC20(customToken).balanceOf(msg.sender) >= listPrice, "Insuficient balance of ERC20 Token");
+
+        // Check if the contract is allowed to transfer tokens
+        require(IERC20(customToken).allowance(msg.sender, address(this)) >= listPrice, 
+        "This contract needs approval from msg.sender");
+
+        // Transfer list price to contract
+        IERC20(customToken).transferFrom(msg.sender, address(this), listPrice);
+        balance += listPrice;
+
         // Emit the event for successful transfer. The frontend parses this message and updates the end user
         emit TokenListedSuccess(
             tokenId,
             address(this),
             msg.sender,
-            priceInCustomToken,
+            price,
             true
         );
     }
 
     // Function to execute the sale using custom ERC20 tokens
     function executeSale(uint256 tokenId) public {
-        uint priceInCustomToken = idToListedToken[tokenId].priceInCustomToken;
+        // Check if token exists
+        require(idToListedToken[tokenId].exists, "Token doesn't exist");
+
+        uint price = idToListedToken[tokenId].price;
         address seller = idToListedToken[tokenId].seller;
 
-        IERC20(customToken).approve(address(this), priceInCustomToken);
-        // Transfer custom tokens from the buyer to the seller
-        IERC20(customToken).transfer(seller, priceInCustomToken);
+        // The buyer has to pay the NFT price
+        // Check if the buyer has enough balance
+        require(IERC20(customToken).balanceOf(msg.sender) >= price, "Insuficient balance of ERC20 Token");
+
+        // Check if the contract is allowed to transfer tokens
+        require(IERC20(customToken).allowance(msg.sender, address(this)) >= price, 
+        "This contract needs approval from msg.sender");
+
+        // Pay the seller
+        IERC20(customToken).transferFrom(msg.sender, seller, price);
 
         idToListedToken[tokenId].currentlyListed = false;
-        idToListedToken[tokenId].seller = payable(msg.sender);
+        idToListedToken[tokenId].seller = msg.sender;
         _itemsSold.increment();
 
         // Actually transfer the NFT to the new owner
         _transfer(address(this), msg.sender, tokenId);
+
         // Approve the marketplace to sell NFTs on your behalf
         approve(address(this), tokenId);
     }
+
+    // Function to resell purchased token
+    function resellToken(uint256 tokenId, uint256 price) public {
+        require(idToListedToken[tokenId].exists, "Token doesn't exist");
+        require(msg.sender == idToListedToken[tokenId].seller, "Only the token owner can resell it");
+
+        // Update data in mapping
+        idToListedToken[tokenId].price = price;
+        idToListedToken[tokenId].currentlyListed = true;
+
+        // Transfer the NFT to the smart contract
+        _transfer(msg.sender, address(this), tokenId);
+
+        // The seller has to pay the listing price
+        // Check if the seller has enough balance
+        require(IERC20(customToken).balanceOf(msg.sender) >= listPrice, "Insuficient balance of ERC20 Token");
+
+        // Check if the contract is allowed to transfer tokens
+        require(IERC20(customToken).allowance(msg.sender, address(this)) >= listPrice, 
+        "This contract needs approval from msg.sender");
+
+        // Transfer list price to contract
+        IERC20(customToken).transferFrom(msg.sender, address(this), listPrice);
+        balance += listPrice;
+    }
+
+    // Function to unlist listed token
+    function unlistToken(uint256 tokenId) public {
+        require(idToListedToken[tokenId].exists, "Token doesn't exist");
+        require(msg.sender == idToListedToken[tokenId].seller, "Only the token owner can resell it");
+
+        // Update data in mapping
+        idToListedToken[tokenId].currentlyListed = false;
+
+        // Transfer the NFT back to it's owner
+        _transfer(address(this), msg.sender, tokenId);
+    }
+
 
     // Function to retrieve all the NFTs currently listed for sale
     function getAllNFTs() public view returns (ListedToken[] memory) {
@@ -181,11 +228,7 @@ contract NFTMarketplace is ERC721URIStorage {
     }
 
     // Function to update the listing price
-    function updateListPrice(uint256 _listPrice) public payable {
-        require(
-            owner == msg.sender,
-            "Only the owner can update the listing price"
-        );
+    function updateListPrice(uint256 _listPrice) public onlyOwner {
         listPrice = _listPrice;
     }
 
@@ -195,24 +238,24 @@ contract NFTMarketplace is ERC721URIStorage {
     }
 
     // Function to get the details of the latest listed token
-    function getLatestIdToListedToken()
-        public
-        view
-        returns (ListedToken memory)
-    {
+    function getLatestIdToListedToken() public view returns (ListedToken memory) {
         uint256 currentTokenId = _tokenIds.current();
         return idToListedToken[currentTokenId];
     }
 
     // Function to get the details of a listed token by its tokenId
-    function getListedTokenForId(
-        uint256 tokenId
-    ) public view returns (ListedToken memory) {
+    function getListedTokenForId(uint256 tokenId) public view returns (ListedToken memory) {
         return idToListedToken[tokenId];
     }
 
     // Function to get the current token ID
     function getCurrentToken() public view returns (uint256) {
         return _tokenIds.current();
+    }
+
+    // Owner can collect contract balance
+    function collectBalance() public onlyOwner {
+        IERC20(customToken).transfer(owner(), balance);
+        balance = 0;
     }
 }
