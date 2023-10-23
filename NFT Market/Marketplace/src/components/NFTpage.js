@@ -13,6 +13,9 @@ const [data, updateData] = useState({});
 const [dataFetched, updateDataFetched] = useState(false);
 const [message, updateMessage] = useState("");
 const [currAddress, updateCurrAddress] = useState("0x");
+const [buttonDisabled, setButtonDisabled] = useState(false);
+const [showPriceInput, setShowPriceInput] = useState(false);
+const [resellPrice, setResellPrice] = useState(0);
 
 async function getNFTData(tokenId) {
     const ethers = require("ethers");
@@ -31,7 +34,7 @@ async function getNFTData(tokenId) {
     console.log(listedToken);
 
     let item = {
-        price: meta.price,
+        price: Math.round(listedToken.price/1e18),
         tokenId: tokenId,
         seller: listedToken.seller,
         owner: listedToken.owner,
@@ -42,6 +45,7 @@ async function getNFTData(tokenId) {
     }
     console.log(item);
     updateData(item);
+    setResellPrice(item.price.toString());
     updateDataFetched(true);
     console.log("address", addr)
     updateCurrAddress(addr);
@@ -49,7 +53,9 @@ async function getNFTData(tokenId) {
 
 async function buyNFT(tokenId, price) {
     try {
+        setButtonDisabled(true);
         const ethers = require("ethers");
+        price = price.toString();
         price = ethers.utils.parseUnits(price, 18)
         //After adding your Hardhat network to your metamask, this code will get providers and signers
         const provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -69,8 +75,11 @@ async function buyNFT(tokenId, price) {
         let transaction = await contract.executeSale(tokenId);
         await transaction.wait();
 
+        await getNFTData(tokenId);
+
         alert('You successfully bought the NFT!');
         updateMessage("");
+        setButtonDisabled(false);
     }
     catch(e) {
         alert("Upload Error"+e)
@@ -79,6 +88,7 @@ async function buyNFT(tokenId, price) {
 
 async function unlistNFT(tokenId) {
     try {
+        setButtonDisabled(true);
         const ethers = require("ethers");
         //After adding your Hardhat network to your metamask, this code will get providers and signers
         const provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -93,8 +103,11 @@ async function unlistNFT(tokenId) {
         let transaction = await contract.unlistToken(tokenId);
         await transaction.wait();
 
+        await getNFTData(tokenId);
+
         alert('You successfully unlisted the NFT!');
         updateMessage("");
+        setButtonDisabled(false);
     }
     catch(e) {
         alert("Upload Error"+e)
@@ -103,6 +116,7 @@ async function unlistNFT(tokenId) {
 
 async function resellNFT(tokenId, price) {
     try {
+        setButtonDisabled(true);
         const ethers = require("ethers");
         price = ethers.utils.parseUnits(price, 18)
         //After adding your Hardhat network to your metamask, this code will get providers and signers
@@ -127,8 +141,11 @@ async function resellNFT(tokenId, price) {
         let transaction = await contract.resellToken(tokenId, price);
         await transaction.wait();
 
+        await getNFTData(tokenId);
+
         alert('You successfully relisted the NFT!');
         updateMessage("");
+        setButtonDisabled(false)
     }
     catch(e) {
         alert("Upload Error"+e)
@@ -166,21 +183,41 @@ async function resellNFT(tokenId, price) {
                     <div>
                     {
                         // Not the token owner
-                        currAddress != data.seller ?
+                        currAddress !== data.seller ?
 
                         (!data.currentlyListed ? 
                             // Token not listed
                             (<div className="text-emerald-700">This token is not for sale</div>) :
                             // Token listed for sale
-                            <button className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => buyNFT(tokenId, data.price)}>Buy this NFT</button>
+                            <button disabled={buttonDisabled} className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => buyNFT(tokenId, data.price)}>Buy this NFT</button>
                         ) :
 
                         // Token owner
-                        (!data.currentlyListed ?
+                        (!data.currentlyListed ? (
                             //Token not listed
-                            (<button className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => resellNFT(tokenId, data.price)}>Resell this NFT</button>) :
+
+                            (showPriceInput ? (
+                                <>
+                                    <label className="block text-white-500 text-sm font-bold mb-2" htmlFor="price">Price (in MCT)</label>
+                                    <input
+                                    type="number"
+                                    value={resellPrice}
+                                    onChange={(e) => setResellPrice(e.target.value)}
+                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                                    />
+                                    <button
+                                    className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm"
+                                    onClick={() => resellNFT(tokenId, resellPrice)}
+                                    disabled={buttonDisabled} // Disable the button when buttonDisabled is true
+                                    >
+                                    Confirm Price
+                                    </button>
+                                </>
+                            ):
+                            (<button disabled={buttonDisabled} className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => setShowPriceInput(true)}>Resell this NFT</button>)
+                            )) :
                             // Token listed for sale
-                            <button className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => unlistNFT(tokenId, data.price)}>Unlist this NFT</button>
+                            <button disabled={buttonDisabled} className="enableEthereumButton bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm" onClick={() => unlistNFT(tokenId)}>Unlist this NFT</button>
                         )
                     }
                     
